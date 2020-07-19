@@ -1,0 +1,556 @@
+#!/usr/bin/env perl6
+
+use Test;
+use NativeCall;
+use NativeHelpers::Blob;
+use lib 'lib';
+use Math::Libgsl::Raw::RandomDistribution :ALL;
+use Math::Libgsl::Raw::Random;
+use Math::Libgsl::Raw::Matrix :ALL;
+use Math::Libgsl::Raw::BLAS :ALL;
+use Math::Libgsl::Raw::LinearAlgebra :ALL;
+use Math::Libgsl::Constants;
+
+subtest 'gaussian distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_gaussian($r, 3e0), 0.4017558243560277, :rel-tol(10⁻¹²), 'gaussian random variate';
+  is-approx gsl_ran_gaussian_pdf(1e0, 3e0), 0.12579440923099774, :rel-tol(10⁻¹²), 'gaussian probability density';
+  is-approx gsl_ran_gaussian_ziggurat($r, 3e0), 1.3570084962645521, :rel-tol(10⁻¹²), 'gaussian ziggurat';
+  is-approx gsl_ran_gaussian_ratio_method($r, 3e0), 4.571692762640136, :rel-tol(10⁻¹²), 'gaussian ratio method';
+  is-approx gsl_ran_ugaussian($r), 0.2712258328755056, :rel-tol(10⁻¹²), 'unit gaussian';
+  is-approx gsl_ran_ugaussian_pdf(3e0), 0.0044318484119380075, :rel-tol(10⁻¹²), 'unit gaussian probability density';
+  is-approx gsl_ran_ugaussian_ratio_method($r), 1.7149190276802055, :rel-tol(10⁻¹²), 'unit gaussian ratio method';
+  is-approx gsl_cdf_gaussian_P(1e0, 3e0), 0.6305586598182363, :rel-tol(10⁻¹²), 'cumulative distribution P(x)';
+  is-approx gsl_cdf_gaussian_Q(1e0, 3e0), 0.36944134018176367, :rel-tol(10⁻¹²), 'cumulative distribution Q(x)';
+  is-approx gsl_cdf_gaussian_Pinv(0.6305586598182363e0, 3e0), 1, :rel-tol(10⁻¹²), 'inverse cumulative distribution P(x)';
+  is-approx gsl_cdf_gaussian_Qinv(0.36944134018176367e0, 3e0), 1, :rel-tol(10⁻¹²), 'inverse cumulative distribution Q(x)';
+  is-approx gsl_cdf_ugaussian_P(1e0), 0.8413447460685429, :rel-tol(10⁻¹²), 'unit cumulative distribution P(x)';
+  is-approx gsl_cdf_ugaussian_Q(1e0), 0.15865525393145705, :rel-tol(10⁻¹²), 'unit cumulative distribution Q(x)';
+  is-approx gsl_cdf_ugaussian_Pinv(0.8413447460685429e0), 1, :rel-tol(10⁻¹²), 'inverse unit cumulative distribution P(x)';
+  is-approx gsl_cdf_ugaussian_Qinv(0.15865525393145705e0), 1, :rel-tol(10⁻¹²), 'inverse unit cumulative distribution Q(x)';
+  gsl_rng_free($r);
+}
+
+subtest 'gaussian tail distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_gaussian_tail($r, 1e0, 3e0), 5.023225218761322, :rel-tol(10⁻¹²), 'gaussian tail';
+  is-approx gsl_ran_gaussian_tail_pdf(1e0, 1e0, 3e0), 0.3404990063350988, :rel-tol(10⁻¹²), 'gaussian tail probability density';
+  is-approx gsl_ran_ugaussian_tail($r, 1e0), 1.198044133837379, :rel-tol(10⁻¹²), 'unit gaussian tail';
+  is-approx gsl_ran_ugaussian_tail_pdf(1e0, 1e0), 1.525135276160981, :rel-tol(10⁻¹²), 'unit gaussian tail probability density';
+  gsl_rng_free($r);
+}
+
+subtest 'bivariate gaussian distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  my num64 ($x, $y) = (0e0, 0e0);
+  gsl_ran_bivariate_gaussian($r, 3e0, 2e0, .3e0, $x, $y);
+  ok (($x, $y) Z≅ (-0.1952914837346669e0, 0.21644212342026375e0)), 'bivariate gaussian';
+  is-approx gsl_ran_bivariate_gaussian_pdf(0e0, 0e0, 3e0, 2e0, .3e0), 0.027806618922095617, :rel-tol(10⁻¹²), 'bivariate gaussian probability density';
+  gsl_rng_free($r);
+}
+
+subtest 'multivariate gaussian distribution' => {
+  my $N = 100_000;
+  my $d = 2;
+  my num64 $t2        = 0e0;
+  my num64 $threshold = 0e0;
+  my num64 $alpha     = 0.05e0;
+  my num64 $pvalue    = 0e0;
+  my gsl_vector $mu            = gsl_vector_calloc($d);
+  my gsl_matrix $sigma         = gsl_matrix_calloc($d, $d);
+  my gsl_matrix $L             = gsl_matrix_calloc($d, $d);
+  my gsl_vector $sample        = gsl_vector_calloc($d);
+  my gsl_matrix $samples       = gsl_matrix_calloc($N, $d);
+  my gsl_vector $mu_hat        = gsl_vector_calloc($d);
+  my gsl_matrix $sigma_hat     = gsl_matrix_calloc($d, $d);
+  my gsl_vector $mu_hat_ctr    = gsl_vector_calloc($d);
+  my gsl_matrix $sigma_hat_inv = gsl_matrix_calloc($d, $d);
+  my gsl_vector $tmp           = gsl_vector_calloc($d);
+  my gsl_rng    $r             = mgsl_rng_setup(DEFAULT);
+
+  gsl_vector_set($mu, 0, 1e0);
+  gsl_vector_set($mu, 1, 2e0);
+  gsl_matrix_set($sigma, 0, 0, 4e0);
+  gsl_matrix_set($sigma, 0, 1, 2e0);
+  gsl_matrix_set($sigma, 1, 0, 2e0);
+  gsl_matrix_set($sigma, 1, 1, 3e0);
+
+  gsl_matrix_memcpy($L, $sigma);
+  gsl_linalg_cholesky_decomp1($L);
+
+  for ^$N -> $i {
+    gsl_ran_multivariate_gaussian($r, $mu, $L, $sample);
+    gsl_matrix_set_row($samples, $i, $sample);
+  }
+
+  gsl_ran_multivariate_gaussian_mean($samples, $mu_hat);
+  gsl_ran_multivariate_gaussian_vcov($samples, $sigma_hat);
+
+  gsl_vector_memcpy($mu_hat_ctr, $mu_hat);
+  gsl_vector_sub($mu_hat_ctr, $mu);
+  gsl_matrix_memcpy($sigma_hat_inv, $sigma_hat);
+  gsl_linalg_cholesky_decomp1($sigma_hat_inv);
+  gsl_linalg_cholesky_invert($sigma_hat_inv);
+  gsl_blas_dgemv(CblasNoTrans, 1e0, $sigma_hat_inv, $mu_hat_ctr, 0e0, $tmp);
+  gsl_blas_ddot($mu_hat_ctr, $tmp, $t2);
+  $t2 *= $N;
+
+  my num64 $diff = ($N - $d).Num;
+  my num64 $dd   = $d.Num;
+  $threshold = ($N - 1e0) * $d / $diff * gsl_cdf_fdist_Pinv(1e0 - $alpha, $dd, $diff);
+
+  ok $t2 > $threshold && $pvalue < $alpha, 'multivariate gaussian, mean, vcov';
+
+  my num64 $obs_res = 0e0;
+  my gsl_vector $x  = gsl_vector_calloc($d);
+
+  gsl_ran_multivariate_gaussian_pdf($x, $mu, $L, $obs_res, $tmp);
+
+  is-approx $obs_res, 0.028294217120391e0, :abs-tol(10⁻¹⁰), 'multivariate gaussian with pdf';
+
+  gsl_ran_multivariate_gaussian_log_pdf($x, $mu, $L, $obs_res, $tmp);
+
+  is-approx $obs_res, -3.565097837249263e0, :abs-tol(10⁻¹⁰), 'multivariate gaussian log with pdf';
+
+  gsl_vector_free($mu);
+  gsl_matrix_free($sigma);
+  gsl_matrix_free($L);
+  gsl_vector_free($sample);
+  gsl_matrix_free($samples);
+  gsl_vector_free($mu_hat);
+  gsl_matrix_free($sigma_hat);
+  gsl_vector_free($mu_hat_ctr);
+  gsl_matrix_free($sigma_hat_inv);
+  gsl_vector_free($tmp);
+  gsl_rng_free($r);
+}
+
+subtest 'exponential distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_exponential($r, 2e0), 16.523156432740787e0, :abs-tol(10⁻¹⁰), 'exponential';
+  is-approx gsl_ran_exponential_pdf(2e0, 2e0), 0.18393972058572117e0, :abs-tol(10⁻¹⁰), 'exponential with pdf';
+  is-approx gsl_cdf_exponential_P(2e0, 2e0), 0.6321205588285577e0, :abs-tol(10⁻¹⁰), 'P cumulative exponential';
+  is-approx gsl_cdf_exponential_Q(2e0, 2e0), 0.36787944117144233e0, :abs-tol(10⁻¹⁰), 'Q cumulative exponential';
+  is-approx gsl_cdf_exponential_Pinv(0.6321205588285577e0, 2e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative exponential';
+  is-approx gsl_cdf_exponential_Qinv(0.36787944117144233e0, 2e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative exponential';
+  gsl_rng_free($r);
+}
+
+subtest 'Laplace distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_laplace($r, 2.75e0), 0.001420747954609721e0, :abs-tol(10⁻¹⁰), 'laplace';
+  is-approx gsl_ran_laplace_pdf(2e0, 2.75e0), 0.08785910567087736e0, :abs-tol(10⁻¹⁰), 'laplace with pdf';
+  is-approx gsl_cdf_laplace_P(2e0, 2.75e0), 0.7583874594050872e0, :abs-tol(10⁻¹⁰), 'P cumulative laplace';
+  is-approx gsl_cdf_laplace_Q(2e0, 2.75e0), 0.24161254059491272e0, :abs-tol(10⁻¹⁰), 'Q cumulative laplace';
+  is-approx gsl_cdf_laplace_Pinv(0.7583874594050872e0, 2.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative laplace';
+  is-approx gsl_cdf_laplace_Qinv(0.24161254059491272e0, 2.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative laplace';
+  gsl_rng_free($r);
+}
+
+subtest 'exponential power distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_exppow($r, 3.7e0, 0.3e0), 96.18418180115754e0, :abs-tol(10⁻¹⁰), 'exppow';
+  is-approx gsl_ran_exppow_pdf(2e0, 3.7e0, 0.3e0), 0.006353720526045815e0, :abs-tol(10⁻¹⁰), 'exppow with pdf';
+  is-approx gsl_cdf_exppow_P(2e0, 3.7e0, 0.3e0), 0.5155820414218526e0, :abs-tol(10⁻¹⁰), 'P cumulative expow';
+  is-approx gsl_cdf_exppow_Q(2e0, 3.7e0, 0.3e0), 0.4844179585781474e0, :abs-tol(10⁻¹⁰), 'Q cumulative expow';
+  gsl_rng_free($r);
+}
+
+subtest 'Cauchy distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_cauchy($r, 2e0), -0.001622639831190868e0, :abs-tol(10⁻¹⁰), 'cauchy';
+  is-approx gsl_ran_cauchy_pdf(2e0, 2e0), 0.07957747154594767e0, :abs-tol(10⁻¹⁰), 'cauchy with pdf';
+  is-approx gsl_cdf_cauchy_P(2e0, 2e0), 0.75e0, :abs-tol(10⁻¹⁰), 'P cumulative cauchy';
+  is-approx gsl_cdf_cauchy_Q(2e0, 2e0), 0.25e0, :abs-tol(10⁻¹⁰), 'Q cumulative cauchy';
+  is-approx gsl_cdf_cauchy_Pinv(.75e0, 2e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative cauchy';
+  is-approx gsl_cdf_cauchy_Qinv(.25e0, 2e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative cauchy';
+  gsl_rng_free($r);
+}
+
+subtest 'Rayleigh distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_rayleigh($r, 1.9e0), 0.04318348873449323e0, :abs-tol(10⁻¹⁰), 'rayleigh';
+  is-approx gsl_ran_rayleigh_pdf(2e0, 1.9e0), 0.3183584873991547e0, :abs-tol(10⁻¹⁰), 'rayleigh with pdf';
+  is-approx gsl_cdf_rayleigh_P(2e0, 1.9e0), 0.4253629302445258e0, :abs-tol(10⁻¹⁰), 'P cumulative rayleigh';
+  is-approx gsl_cdf_rayleigh_Q(2e0, 1.9e0), 0.5746370697554741e0, :abs-tol(10⁻¹⁰), 'Q cumulative rayleigh';
+  is-approx gsl_cdf_rayleigh_Pinv(0.4253629302445258e0, 1.9e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative rayleigh';
+  is-approx gsl_cdf_rayleigh_Qinv(0.5746370697554741e0, 1.9e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative rayleigh';
+  gsl_rng_free($r);
+}
+
+subtest 'Rayleigh tail distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_rayleigh_tail($r, 2.7e0, 1.9e0), 2.7003453137884574e0, :abs-tol(10⁻¹⁰), 'rayleigh tail';
+  is-approx gsl_ran_rayleigh_tail_pdf(2e0, 2.7e0, 1.9e0), 0e0, :abs-tol(10⁻¹⁰), 'rayleigh tail with pdf';
+  gsl_rng_free($r);
+}
+
+subtest 'Landau distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_landau($r), 3880.037426254597e0, :abs-tol(10⁻¹⁰), 'landau';
+  is-approx gsl_ran_landau_pdf(2e0), 0.10491298949080555e0, :abs-tol(10⁻¹⁰), 'landau with pdf';
+  gsl_rng_free($r);
+}
+
+subtest 'Levy alpha-Stable distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_levy($r, 5e0, 1e0), 6162.79707164862e0, :abs-tol(10⁻¹⁰), 'levy';
+  gsl_rng_free($r);
+}
+
+subtest 'Levy skew alpha-Stable distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_levy_skew($r, 5e0, 1e0, 0e0), 6162.79707164862e0, :abs-tol(10⁻¹⁰), 'levy skew';
+  gsl_rng_free($r);
+}
+
+subtest 'gamma distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_gamma($r, 2.5e0, 2.17e0), 7.592395030767021e0, :abs-tol(10⁻¹⁰), 'gamma';
+  is-approx gsl_ran_gamma_knuth($r, 2.5e0, 2.17e0), 7.554777177884447e0, :abs-tol(10⁻¹⁰), 'gamma knuth';
+  is-approx gsl_ran_gamma_pdf(2e0, 2.5e0, 2.17e0), 0.12203602332361416e0, :abs-tol(10⁻¹⁰), 'gamma with pdf';
+  is-approx gsl_cdf_gamma_P(2e0, 2.5e0, 2.17e0), 0.12962769871792748e0, :abs-tol(10⁻¹⁰), 'P cumulative gamma';
+  is-approx gsl_cdf_gamma_Q(2e0, 2.5e0, 2.17e0), 0.8703723012820725e0, :abs-tol(10⁻¹⁰), 'Q cumulative gamma';
+  is-approx gsl_cdf_gamma_Pinv(0.12962769871792748e0, 2.5e0, 2.17e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative gamma';
+  is-approx gsl_cdf_gamma_Qinv(0.8703723012820725e0, 2.5e0, 2.17e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gamma';
+  gsl_rng_free($r);
+}
+
+subtest 'flat distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_flat($r, 3e0, 4e0), 3.999741748906672e0, :abs-tol(10⁻¹⁰), 'flat';
+  is-approx gsl_ran_flat_pdf(2e0, 3e0, 4e0), 0e0, :abs-tol(10⁻¹⁰), 'flat with pdf';
+  is-approx gsl_cdf_flat_P(2e0, 3e0, 4e0), 0e0, :abs-tol(10⁻¹⁰), 'P cumulative flat';
+  is-approx gsl_cdf_flat_Q(2e0, 3e0, 4e0), 1e0, :abs-tol(10⁻¹⁰), 'Q cumulative flat';
+  is-approx gsl_cdf_flat_Pinv(0e0, 3e0, 4e0), 3e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative flat';
+  is-approx gsl_cdf_flat_Qinv(1e0, 3e0, 4e0), 3e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative flat';
+  gsl_rng_free($r);
+}
+
+subtest 'lognormal distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_lognormal($r, 2.7e0, 3e0), 12.239990687580857e0, :abs-tol(10⁻¹⁰), 'lognormal';
+  is-approx gsl_ran_lognormal_pdf(2e0, 2.7e0, 3e0), 0.053160178764929525e0, :abs-tol(10⁻¹⁰), 'lognormal with pdf';
+  is-approx gsl_cdf_lognormal_P(2e0, 2.7e0, 3e0), 0.25176338701440004e0, :abs-tol(10⁻¹⁰), 'P cumulative lognormal';
+  is-approx gsl_cdf_lognormal_Q(2e0, 2.7e0, 3e0), 0.7482366129856e0, :abs-tol(10⁻¹⁰), 'Q cumulative lognormal';
+  is-approx gsl_cdf_lognormal_Pinv(0.25176338701440004e0, 2.7e0, 3e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative lognormal';
+  is-approx gsl_cdf_lognormal_Qinv(0.7482366129856e0, 2.7e0, 3e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative lognormal';
+  gsl_rng_free($r);
+}
+
+subtest 'chi-squared distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_chisq($r, 13e0), 16.53548783112717e0, :abs-tol(10⁻¹⁰), 'chisq';
+  is-approx gsl_ran_chisq_pdf(2e0, 13e0), 0.0006389340989638759e0, :abs-tol(10⁻¹⁰), 'chisq with pdf';
+  is-approx gsl_cdf_chisq_P(2e0, 13e0), 0.00022625008465604695e0, :abs-tol(10⁻¹⁰), 'P cumulative chisq';
+  is-approx gsl_cdf_chisq_Q(2e0, 13e0), 0.999773749915344e0, :abs-tol(10⁻¹⁰), 'Q cumulative chisq';
+  is-approx gsl_cdf_chisq_Pinv(0.00022625008465604695e0, 13e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative chisq';
+  is-approx gsl_cdf_chisq_Qinv(0.999773749915344e0, 13e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative chisq';
+  gsl_rng_free($r);
+}
+
+subtest 'f-distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_fdist($r, 3e0, 4e0), 1.265383001140288e0, :abs-tol(10⁻¹⁰), 'fdist';
+  is-approx gsl_ran_fdist_pdf(2e0, 3e0, 4e0), 0.13942740046346694e0, :abs-tol(10⁻¹⁰), 'fdist with pdf';
+  is-approx gsl_cdf_fdist_P(2e0, 3e0, 4e0), 0.743612802471824e0, :abs-tol(10⁻¹⁰), 'P cumulative fdist';
+  is-approx gsl_cdf_fdist_Q(2e0, 3e0, 4e0), 0.2563871975281759e0, :abs-tol(10⁻¹⁰), 'Q cumulative fdist';
+  is-approx gsl_cdf_fdist_Pinv(0.743612802471824e0, 3e0, 4e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative fdist';
+  is-approx gsl_cdf_fdist_Qinv(0.2563871975281759e0, 3e0, 4e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative fdist';
+  gsl_rng_free($r);
+}
+
+subtest 't-distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_tdist($r, 1.75e0), 0.2825086397013947e0, :abs-tol(10⁻¹⁰), 'tdist';
+  is-approx gsl_ran_tdist_pdf(2e0, 1.75e0), 0.06778157292044809e0, :abs-tol(10⁻¹⁰), 'tdist with pdf';
+  is-approx gsl_cdf_tdist_P(2e0, 1.75e0), 0.8993101012459747e0, :abs-tol(10⁻¹⁰), 'P cumulative tdist';
+  is-approx gsl_cdf_tdist_Q(2e0, 1.75e0), 0.1006898987540253e0, :abs-tol(10⁻¹⁰), 'Q cumulative tdist';
+  is-approx gsl_cdf_tdist_Pinv(0.8993101012459747e0, 1.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative tdist';
+  is-approx gsl_cdf_tdist_Qinv(0.1006898987540253e0, 1.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative tdist';
+  gsl_rng_free($r);
+}
+
+subtest 'beta distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_beta($r, 2e0, 3e0), 0.45158505658193976e0, :abs-tol(10⁻¹⁰), 'beta';
+  is-approx gsl_ran_beta_pdf(2e0, 2e0, 3e0), 0e0, :abs-tol(10⁻¹⁰), 'beta with pdf';
+  is-approx gsl_cdf_beta_P(2e0, 2e0, 3e0), 1e0, :abs-tol(10⁻¹⁰), 'P cumulative beta';
+  is-approx gsl_cdf_beta_Q(2e0, 2e0, 3e0), 0e0, :abs-tol(10⁻¹⁰), 'Q cumulative beta';
+  is-approx gsl_cdf_beta_Pinv(1e0, 2e0, 3e0), 1e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative beta';
+  is-approx gsl_cdf_beta_Qinv(0e0, 2e0, 3e0), 1e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative beta';
+  gsl_rng_free($r);
+}
+
+subtest 'logistic distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_logistic($r, 3.1e0), 25.61009178896598e0, :abs-tol(10⁻¹⁰), 'logistic';
+  is-approx gsl_ran_logistic_pdf(2e0, 3.1e0), 0.07280296434630028e0, :abs-tol(10⁻¹⁰), 'logistic with pdf';
+  is-approx gsl_cdf_logistic_P(2e0, 3.1e0), 0.6559192436053651e0, :abs-tol(10⁻¹⁰), 'P cumulative logistic';
+  is-approx gsl_cdf_logistic_Q(2e0, 3.1e0), 0.344080756394635e0, :abs-tol(10⁻¹⁰), 'Q cumulative logistic';
+  is-approx gsl_cdf_logistic_Pinv(0.6559192436053651e0, 3.1e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative logistic';
+  is-approx gsl_cdf_logistic_Qinv(0.344080756394635e0, 3.1e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative logistic';
+  gsl_rng_free($r);
+}
+
+subtest 'Pareto distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_pareto($r, 1.9e0, 2.75e0), 2.7503738581610317e0, :abs-tol(10⁻¹⁰), 'pareto';
+  is-approx gsl_ran_pareto_pdf(3e0, 1.9e0, 2.75e0), 0.5368266659600216e0, :abs-tol(10⁻¹⁰), 'pareto with pdf';
+  is-approx gsl_cdf_pareto_P(3e0, 1.9e0, 2.75e0), 0.15237894848417666e0, :abs-tol(10⁻¹⁰), 'P cumulative pareto';
+  is-approx gsl_cdf_pareto_Q(3e0, 1.9e0, 2.75e0), 0.8476210515158233e0, :abs-tol(10⁻¹⁰), 'Q cumulative pareto';
+  is-approx gsl_cdf_pareto_Pinv(0.15237894848417666e0, 1.9e0, 2.75e0), 3e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative pareto';
+  is-approx gsl_cdf_pareto_Qinv(0.8476210515158233e0, 1.9e0, 2.75e0), 3e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative pareto';
+  gsl_rng_free($r);
+}
+
+subtest 'spherical vector distribution' => {
+  my $*TOLERANCE = 10⁻¹⁰;
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  my num64 ($x, $y) = (0e0, 0e0);
+  gsl_ran_dir_2d($r, $x, $y);
+  ok $x ≅ -0.617745613497854e0 && $y ≅ -0.7863779988047479e0, '2D random vector';
+
+  ($x, $y) = (0e0, 0e0);
+  gsl_ran_dir_2d_trig_method($r, $x, $y);
+  ok $x ≅ 0.11500033916619544e0 && $y ≅ 0.9933654523848008e0, '2D random vector trig method';
+
+  my num64 $z;
+  ($x, $y, $z) = (0e0, 0e0, 0e0);
+  gsl_ran_dir_3d($r, $x, $y, $z);
+  ok $x ≅ -0.024188741233946875e0 && $y ≅ 0.7364240456943486e0 && $z ≅ 0.6760876642275653e0, '3D random vector';
+
+  my $n = 5;
+  my $xarr = CArray[num64].new: 0e0 xx $n;
+  gsl_ran_dir_nd($r, $n, $xarr);
+  ok ($xarr[^$n].list
+    Z≅
+    (0.1717392856031707e0, 0.547345960645299e0, -0.814904936760339e0, 0.05741225862147077e0, -0.059596927348619114e0)),
+    'nD random vector';
+
+  gsl_rng_free($r);
+}
+
+subtest 'Weibull distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_weibull($r, 3.14e0, 2.75e0), 0.15568189304354582e0, :abs-tol(10⁻¹⁰), 'weibull';
+  is-approx gsl_ran_weibull_pdf(2e0, 3.14e0, 2.75e0), 0.2978229948509798e0, :abs-tol(10⁻¹⁰), 'weibull with pdf';
+  is-approx gsl_cdf_weibull_P(2e0, 3.14e0, 2.75e0), 0.25117631509661126e0, :abs-tol(10⁻¹⁰), 'P cumulative weibull';
+  is-approx gsl_cdf_weibull_Q(2e0, 3.14e0, 2.75e0), 0.7488236849033888e0, :abs-tol(10⁻¹⁰), 'Q cumulative weibull';
+  is-approx gsl_cdf_weibull_Pinv(0.25117631509661126e0, 3.14e0, 2.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative weibull';
+  is-approx gsl_cdf_weibull_Qinv(0.7488236849033888e0, 3.14e0, 2.75e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative weibull';
+  gsl_rng_free($r);
+}
+
+subtest 'type-1 Gumbel distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_gumbel1($r, 3.12e0, 4.56e0), 3.134221698863258e0, :abs-tol(10⁻¹⁰), 'gumbel1';
+  is-approx gsl_ran_gumbel1_pdf(2e0, 3.12e0, 4.56e0), 0.02749542323890301e0, :abs-tol(10⁻¹⁰), 'gumbel1 with pdf';
+  is-approx gsl_cdf_gumbel1_P(2e0, 3.12e0, 4.56e0), 0.9911480698975662e0, :abs-tol(10⁻¹⁰), 'P cumulative gumbel1';
+  is-approx gsl_cdf_gumbel1_Q(2e0, 3.12e0, 4.56e0), 0.008851930102433793e0, :abs-tol(10⁻¹⁰), 'Q cumulative gumbel1';
+  is-approx gsl_cdf_gumbel1_Pinv(0.9911480698975662e0, 3.12e0, 4.56e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative gumbel1';
+  is-approx gsl_cdf_gumbel1_Qinv(0.008851930102433793e0, 3.12e0, 4.56e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gumbel1';
+  gsl_rng_free($r);
+}
+
+subtest 'type-2 Gumbel distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  is-approx gsl_ran_gumbel2($r, 3.12e0, 4.56e0), 22.970750721534436e0, :abs-tol(10⁻¹⁰), 'gumbel1';
+  is-approx gsl_ran_gumbel2_pdf(2e0, 3.12e0, 4.56e0), 0.4842675579059279e0, :abs-tol(10⁻¹⁰), 'gumbel1 with pdf';
+  is-approx gsl_cdf_gumbel2_P(2e0, 3.12e0, 4.56e0), 0.5918470962288894e0, :abs-tol(10⁻¹⁰), 'P cumulative gumbel1';
+  is-approx gsl_cdf_gumbel2_Q(2e0, 3.12e0, 4.56e0), 0.4081529037711105e0, :abs-tol(10⁻¹⁰), 'Q cumulative gumbel1';
+  is-approx gsl_cdf_gumbel2_Pinv(0.5918470962288894e0, 3.12e0, 4.56e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse P cumulative gumbel1';
+  is-approx gsl_cdf_gumbel2_Qinv(0.4081529037711105e0, 3.12e0, 4.56e0), 2e0, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gumbel2';
+  gsl_rng_free($r);
+}
+
+subtest 'Dirichlet distribution' => {
+  my $*TOLERANCE = 10⁻¹⁰;
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  my $K = 2;
+  my $alpha = CArray[num64].new: 2.5e0, 5e0;
+  my $theta = CArray[num64].new: 0e0, 0e0;
+
+  gsl_ran_dirichlet($r, $K, $alpha, $theta);
+  ok ($theta[^$K].list Z≅ (0.37979184993320686e0, 0.6202081500667932e0)), 'dirichlet';
+
+  $theta[0] = .2e0;
+  $theta[1] = .8e0;
+  ok gsl_ran_dirichlet_pdf($K, $alpha, $theta) ≅ 2.148771883658201e0, 'dirichlet with pdf';
+
+  ok gsl_ran_dirichlet_lnpdf($K, $alpha, $theta) ≅ 0.7648964620298799e0, 'ln dirichlet with pdf';
+
+  gsl_rng_free($r);
+}
+
+subtest 'general discrete distribution' => {
+  my $*TOLERANCE = 10⁻¹⁰;
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  my $P = CArray[num64].new: .59e0, .4e0, .01e0;
+
+  my $g = gsl_ran_discrete_preproc(3, $P);
+  isa-ok $g, gsl_ran_discrete_t, 'create lookup table';
+  ok gsl_ran_discrete($r, $g) ~~ 0|1|2, 'get discrete random number';
+  ok gsl_ran_discrete_pdf(2, $g) ≅ .01e0, 'probability of a value';
+  lives-ok { gsl_ran_discrete_free($g) }, 'destroy lookup table ';
+
+  gsl_rng_free($r);
+}
+
+subtest 'Poisson distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_poisson($r, 30e0) == 34, 'poisson';
+  is-approx gsl_ran_poisson_pdf(2, 5e0), 0.08422433748856832e0, :abs-tol(10⁻¹⁰), 'poisson with pdf';
+  is-approx gsl_cdf_poisson_P(2, 5e0), 0.12465201948308077e0, :abs-tol(10⁻¹⁰), 'P cumulative poisson';
+  is-approx gsl_cdf_poisson_Q(2, 5e0), 0.8753479805169192e0, :abs-tol(10⁻¹⁰), 'Q cumulative poisson';
+
+  gsl_rng_free($r);
+}
+
+subtest 'Bernoulli distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_bernoulli($r, .3e0) == 0, 'bernoulli';
+  is-approx gsl_ran_bernoulli_pdf(1, .3e0), 0.3e0, :abs-tol(10⁻¹⁰), 'bernoulli with pdf';
+
+  gsl_rng_free($r);
+}
+
+subtest 'binomial distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_binomial($r, .3e0, 5) == 5, 'binomial';
+  is-approx gsl_ran_binomial_pdf(2, .3e0, 5), 0.3086999999999999e0, :abs-tol(10⁻¹⁰), 'binomial with pdf';
+  is-approx gsl_cdf_binomial_P(2, .3e0, 5), 0.83692e0, :abs-tol(10⁻¹⁰), 'P cumulative binomial';
+  is-approx gsl_cdf_binomial_Q(2, .3e0, 5), 0.16307999999999997e0, :abs-tol(10⁻¹⁰), 'Q cumulative binomial';
+
+  gsl_rng_free($r);
+}
+
+subtest 'multinomial distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  my $K = 3;
+  my $sum_n = 100;
+  my $p = CArray[num64].new: 2e0, 7e0, 1e0;
+  my $n = CArray[uint32].new: 0 xx 3;
+
+  gsl_ran_multinomial($r, $K, $sum_n, $p, $n);
+  is-deeply $n.list, (20, 72, 8), 'multinomial';
+  is-approx gsl_ran_multinomial_pdf($K, $p, $n), 0.011455694618856253, :abs-tol(10⁻¹⁰), 'multinomial with pdf';
+  is-approx gsl_ran_multinomial_lnpdf($K, $p, $n), -4.469268325992729, :abs-tol(10⁻¹⁰), 'ln multinomial with pdf';
+
+  gsl_rng_free($r);
+}
+
+subtest 'negative binomial distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_negative_binomial($r, .3e0, 20e0) == 45, 'negative binomial';
+  is-approx gsl_ran_negative_binomial_pdf(20, .3e0, 20e0), 0.0019175722376507298e0, :abs-tol(10⁻¹⁰), 'negative binomial with pdf';
+  is-approx gsl_cdf_negative_binomial_P(20, .3e0, 20e0), 0.006254504372434949e0, :abs-tol(10⁻¹⁰), 'P cumulative negative binomial';
+  is-approx gsl_cdf_negative_binomial_Q(20, .3e0, 20e0), 0.9937454956275651e0, :abs-tol(10⁻¹⁰), 'Q cumulative negative binomial';
+
+  gsl_rng_free($r);
+}
+
+subtest 'Pascal distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_pascal($r, .8e0, 3) == 0, 'pascal';
+  is-approx gsl_ran_pascal_pdf(2, .8e0, 3), 0.12287999999999971e0, :abs-tol(10⁻¹⁰), 'pascal with pdf';
+  is-approx gsl_cdf_pascal_P(2, .8e0, 3), 0.94208e0, :abs-tol(10⁻¹⁰), 'P cumulative pascal';
+  is-approx gsl_cdf_pascal_Q(2, .8e0, 3), 0.057920000000000006e0, :abs-tol(10⁻¹⁰), 'Q cumulative pascal';
+
+  gsl_rng_free($r);
+}
+
+subtest 'geometric distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_geometric($r, .5e0) == 1, 'geometric';
+  is-approx gsl_ran_geometric_pdf(2, .5e0), .25e0, :abs-tol(10⁻¹⁰), 'geometric with pdf';
+  is-approx gsl_cdf_geometric_P(2, .5e0), .75e0, :abs-tol(10⁻¹⁰), 'P cumulative geometric';
+  is-approx gsl_cdf_geometric_Q(2, .5e0), .25e0, :abs-tol(10⁻¹⁰), 'Q cumulative geometric';
+
+  gsl_rng_free($r);
+}
+
+subtest 'hypergeometric distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_hypergeometric($r, 5, 7, 4) == 2, 'hypergeometric';
+  is-approx gsl_ran_hypergeometric_pdf(2, 5, 7, 4), 0.4242424242424253e0, :abs-tol(10⁻¹⁰), 'hypergeometric with pdf';
+  is-approx gsl_cdf_hypergeometric_P(2, 5, 7, 4), 0.8484848484848483e0, :abs-tol(10⁻¹⁰), 'P cumulative hypergeometric';
+  is-approx gsl_cdf_hypergeometric_Q(2, 5, 7, 4), 0.1515151515151517e0, :abs-tol(10⁻¹⁰), 'Q cumulative hypergeometric';
+
+  gsl_rng_free($r);
+}
+
+subtest 'logarithmic distribution' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+
+  ok gsl_ran_logarithmic($r, .4e0) == 1, 'logarithmic';
+  is-approx gsl_ran_logarithmic_pdf(2, .4e0), 0.15660921511769743e0, :abs-tol(10⁻¹⁰), 'logarithmic with pdf';
+
+  gsl_rng_free($r);
+}
+
+subtest 'Wishart distribution' => {
+  my gsl_matrix $V    = gsl_matrix_calloc(2, 2);
+  my gsl_matrix $L    = gsl_matrix_calloc(2, 2);
+  my gsl_matrix $X    = gsl_matrix_calloc(2, 2);
+  my gsl_matrix $L_X  = gsl_matrix_calloc(2, 2);
+  my gsl_matrix $work = gsl_matrix_calloc(2, 2);
+  my num64 $obs_res;
+  my num64 $df = 3e0;
+  my $*TOLERANCE = 10⁻¹⁰;
+
+  gsl_matrix_set($V, 0, 0, 1e0);
+  gsl_matrix_set($V, 1, 1, 1e0);
+  gsl_matrix_set($V, 0, 1, .3e0);
+  gsl_matrix_set($V, 1, 0, .3e0);
+
+  gsl_matrix_memcpy($L, $V);
+  gsl_linalg_cholesky_decomp1($L);
+
+  gsl_matrix_set($X, 0, 0, 2.213322e0);
+  gsl_matrix_set($X, 1, 1, 3.285779e0);
+  gsl_matrix_set($X, 0, 1, 1.453357e0);
+  gsl_matrix_set($X, 1, 0, 1.453357e0);
+
+  gsl_matrix_memcpy($L_X, $X);
+  gsl_linalg_cholesky_decomp1($L_X);
+
+  gsl_ran_wishart_log_pdf($X, $L_X, $df, $L, $obs_res, $work);
+  ok $obs_res ≅ -4.931913612377813e0, 'log wishart with pdf';
+
+  gsl_ran_wishart_pdf($X, $L_X, $df, $L, $obs_res, $work);
+  ok $obs_res ≅ 0.007212687778224e0, 'wishart with pdf';
+
+  gsl_matrix_free($V);
+  gsl_matrix_free($L);
+  gsl_matrix_free($X);
+  gsl_matrix_free($L_X);
+  gsl_matrix_free($work);
+}
+
+subtest 'shuffling and sampling' => {
+  my gsl_rng $r = mgsl_rng_setup(DEFAULT);
+  my CArray[int32] $x .= new: ^10;
+  my CArray[int32] $y .= new: ^3;
+
+  gsl_ran_shuffle($r, pointer-to($x), 10, nativesizeof(int32).Int) for ^10;
+  is-deeply $x[^10], (5, 7, 2, 3, 4, 1, 0, 6, 9, 8), 'shuffle';
+
+  gsl_ran_choose($r, pointer-to($y), 3, pointer-to($x), 10, nativesizeof(int32).Int) for ^10;
+  is-deeply $y[^3], (2, 3, 9), 'choose';
+
+  gsl_ran_sample($r, pointer-to($y), 3, pointer-to($x), 10, nativesizeof(int32).Int) for ^10;
+  is-deeply $y[^3], (3, 3, 8), 'sample';
+
+  gsl_rng_free($r);
+}
+
+done-testing;

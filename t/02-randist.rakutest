@@ -1,0 +1,422 @@
+#!/usr/bin/env perl6
+
+use Test;
+use NativeCall;
+use NativeHelpers::Blob;
+use lib 'lib';
+use Math::Libgsl::RandomDistribution;
+use Math::Libgsl::Random;
+use Math::Libgsl::Matrix :ALL;
+use Math::Libgsl::BLAS :ALL;
+use Math::Libgsl::LinearAlgebra :ALL;
+use Math::Libgsl::Constants;
+
+subtest 'gaussian distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx gaussian($r, 3), 0.4017558243560277, :rel-tol(10⁻¹²), 'gaussian random variate';
+  is-approx gaussian-pdf(1, 3), 0.12579440923099774, :rel-tol(10⁻¹²), 'gaussian probability density';
+  is-approx gaussian-ziggurat($r, 3), 1.3570084962645521, :rel-tol(10⁻¹²), 'gaussian ziggurat';
+  is-approx gaussian-ratio-method($r, 3), 4.571692762640136, :rel-tol(10⁻¹²), 'gaussian ratio method';
+  is-approx ugaussian($r), 0.2712258328755056, :rel-tol(10⁻¹²), 'unit gaussian';
+  is-approx ugaussian-pdf(3), 0.0044318484119380075, :rel-tol(10⁻¹²), 'unit gaussian probability density';
+  is-approx ugaussian-ratio-method($r), 1.7149190276802055, :rel-tol(10⁻¹²), 'unit gaussian ratio method';
+  is-approx gaussian-P(1, 3), 0.6305586598182363, :rel-tol(10⁻¹²), 'cumulative distribution P(x)';
+  is-approx gaussian-Q(1, 3), 0.36944134018176367, :rel-tol(10⁻¹²), 'cumulative distribution Q(x)';
+  is-approx gaussian-Pinv(0.6305586598182363, 3), 1, :rel-tol(10⁻¹²), 'inverse cumulative distribution P(x)';
+  is-approx gaussian-Qinv(0.36944134018176367, 3), 1, :rel-tol(10⁻¹²), 'inverse cumulative distribution Q(x)';
+  is-approx ugaussian-P(1), 0.8413447460685429, :rel-tol(10⁻¹²), 'unit cumulative distribution P(x)';
+  is-approx ugaussian-Q(1), 0.15865525393145705, :rel-tol(10⁻¹²), 'unit cumulative distribution Q(x)';
+  is-approx ugaussian-Pinv(0.8413447460685429), 1, :rel-tol(10⁻¹²), 'inverse unit cumulative distribution P(x)';
+  is-approx ugaussian-Qinv(0.15865525393145705), 1, :rel-tol(10⁻¹²), 'inverse unit cumulative distribution Q(x)';
+}
+
+subtest 'gaussian tail distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx gaussian-tail($r, 1, 3), 5.023225218761322, :rel-tol(10⁻¹²), 'gaussian tail';
+  is-approx gaussian-tail-pdf(1, 1, 3), 0.3404990063350988, :rel-tol(10⁻¹²), 'gaussian tail probability density';
+  is-approx ugaussian-tail($r, 1), 1.198044133837379, :rel-tol(10⁻¹²), 'unit gaussian tail';
+  is-approx ugaussian-tail-pdf(1, 1), 1.525135276160981, :rel-tol(10⁻¹²), 'unit gaussian tail probability density';
+}
+
+subtest 'bivariate gaussian distribution' => {
+  my $*TOLERANCE = 10⁻¹²;
+  my Math::Libgsl::Random $r .= new;
+  my ($x, $y) = bivariate-gaussian($r, 3, 2, .3);
+  ok (($x, $y) Z≅ (-0.1952914837346669, 0.21644212342026375)), 'bivariate gaussian';
+  is-approx bivariate-gaussian-pdf(0e0, 0e0, 3e0, 2e0, .3e0), 0.027806618922095617, :rel-tol(10⁻¹²), 'bivariate gaussian probability density';
+}
+
+subtest 'bivariate gaussian distribution' => {
+  my $*TOLERANCE = 10⁻¹²;
+  my $N = 100;
+  my $d = 2;
+  my Math::Libgsl::Random $r .= new;
+  my Math::Libgsl::Matrix $samples .= new: $N, $d;
+  my Math::Libgsl::Matrix $L       .= new: $d, $d;
+  my Math::Libgsl::Vector $mu      .= new: $d;
+  my Math::Libgsl::Vector $x       .= new: $d;
+  $mu[0] = 1; $mu[1] = 2;
+  $L[0;0] = 4; $L[0;1] = 2; $L[1;0] = 2; $L[1;1] = 3;
+  cholesky-decomp1($L);
+
+  for ^$N -> $i {
+    my $sample = multivariate-gaussian($r, $mu, $L);
+    $samples.set-row($i, $sample);
+  }
+  ok ($samples.get-row(0) Z≅ (1.2678372162373517, 2.0093249906121344)), 'multivariate gaussian';
+  my $mu-hat = multivariate-gaussian-mean($samples);
+  my $L-hat  = multivariate-gaussian-vcov($samples);
+  ok ($mu-hat[^2] Z≅ (0.9849998488450891, 1.987771398882359)), 'multivariate gaussian mean';
+  ok ((gather for ^2 X ^2 -> ($i, $j) { take $L-hat[$i;$j] })
+      Z≅
+      (3.981679494074944, 1.981330609263434, 1.981330609263434, 2.9937183347090186)), 'multivariate gaussian vcov';
+  is-approx multivariate-gaussian-pdf($x, $mu, $L), 0.028294217120391e0, :abs-tol(10⁻¹⁰), 'multivariate gaussian with pdf';
+  is-approx multivariate-gaussian-log-pdf($x, $mu, $L), -3.565097837249263e0, :abs-tol(10⁻¹⁰), 'multivariate gaussian with pdf';
+}
+
+subtest 'exponential distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx exponential($r, 2), 16.523156432740787, :abs-tol(10⁻¹⁰), 'exponential';
+  is-approx exponential-pdf(2, 2), 0.18393972058572117, :abs-tol(10⁻¹⁰), 'exponential with pdf';
+  is-approx exponential-P(2, 2), 0.6321205588285577, :abs-tol(10⁻¹⁰), 'P cumulative exponential';
+  is-approx exponential-Q(2, 2), 0.36787944117144233, :abs-tol(10⁻¹⁰), 'Q cumulative exponential';
+  is-approx exponential-Pinv(0.6321205588285577, 2), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative exponential';
+  is-approx exponential-Qinv(0.36787944117144233, 2), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative exponential';
+}
+
+subtest 'Laplace distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx laplace($r, 2.75), 0.001420747954609721, :abs-tol(10⁻¹⁰), 'laplace';
+  is-approx laplace-pdf(2, 2.75), 0.08785910567087736, :abs-tol(10⁻¹⁰), 'laplace with pdf';
+  is-approx laplace-P(2, 2.75), 0.7583874594050872, :abs-tol(10⁻¹⁰), 'P cumulative laplace';
+  is-approx laplace-Q(2, 2.75), 0.24161254059491272, :abs-tol(10⁻¹⁰), 'Q cumulative laplace';
+  is-approx laplace-Pinv(0.7583874594050872, 2.75), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative laplace';
+  is-approx laplace-Qinv(0.24161254059491272, 2.75), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative laplace';
+}
+
+subtest 'exponential power distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx exppow($r, 3.7, 0.3), 96.18418180115754, :abs-tol(10⁻¹⁰), 'exppow';
+  is-approx exppow-pdf(2, 3.7, 0.3), 0.006353720526045815, :abs-tol(10⁻¹⁰), 'exppow with pdf';
+  is-approx exppow-P(2, 3.7, 0.3), 0.5155820414218526, :abs-tol(10⁻¹⁰), 'P cumulative expow';
+  is-approx exppow-Q(2, 3.7, 0.3), 0.4844179585781474, :abs-tol(10⁻¹⁰), 'Q cumulative expow';
+}
+
+subtest 'Cauchy distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx cauchy($r, 2), -0.001622639831190868, :abs-tol(10⁻¹⁰), 'cauchy';
+  is-approx cauchy-pdf(2, 2), 0.07957747154594767, :abs-tol(10⁻¹⁰), 'cauchy with pdf';
+  is-approx cauchy-P(2, 2), 0.75, :abs-tol(10⁻¹⁰), 'P cumulative cauchy';
+  is-approx cauchy-Q(2, 2), 0.25, :abs-tol(10⁻¹⁰), 'Q cumulative cauchy';
+  is-approx cauchy-Pinv(.75, 2), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative cauchy';
+  is-approx cauchy-Qinv(.25, 2), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative cauchy';
+}
+
+subtest 'Rayleigh distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx rayleigh($r, 1.9), 0.04318348873449323, :abs-tol(10⁻¹⁰), 'rayleigh';
+  is-approx rayleigh-pdf(2, 1.9), 0.3183584873991547, :abs-tol(10⁻¹⁰), 'rayleigh with pdf';
+  is-approx rayleigh-P(2, 1.9), 0.4253629302445258, :abs-tol(10⁻¹⁰), 'P cumulative rayleigh';
+  is-approx rayleigh-Q(2, 1.9), 0.5746370697554741, :abs-tol(10⁻¹⁰), 'Q cumulative rayleigh';
+  is-approx rayleigh-Pinv(0.4253629302445258, 1.9), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative rayleigh';
+  is-approx rayleigh-Qinv(0.5746370697554741, 1.9), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative rayleigh';
+}
+
+subtest 'Rayleigh tail distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx rayleigh-tail($r, 2.7, 1.9), 2.7003453137884574, :abs-tol(10⁻¹⁰), 'rayleigh tail';
+  is-approx rayleigh-tail-pdf(2, 2.7, 1.9), 0, :abs-tol(10⁻¹⁰), 'rayleigh tail with pdf';
+}
+
+subtest 'Landau distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx landau($r), 3880.037426254597, :abs-tol(10⁻¹⁰), 'landau';
+  is-approx landau-pdf(2), 0.10491298949080555, :abs-tol(10⁻¹⁰), 'landau with pdf';
+}
+
+subtest 'Levy alpha-Stable distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx levy($r, 5, 1), 6162.79707164862, :abs-tol(10⁻¹⁰), 'levy';
+}
+
+subtest 'Levy skew alpha-Stable distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx levy-skew($r, 5, 1, 0), 6162.79707164862, :abs-tol(10⁻¹⁰), 'levy skew';
+}
+
+subtest 'gamma distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx gamma($r, 2.5, 2.17), 7.592395030767021, :abs-tol(10⁻¹⁰), 'gamma';
+  is-approx gamma-knuth($r, 2.5, 2.17), 7.554777177884447, :abs-tol(10⁻¹⁰), 'gamma knuth';
+  is-approx gamma-pdf(2, 2.5, 2.17), 0.12203602332361416, :abs-tol(10⁻¹⁰), 'gamma with pdf';
+  is-approx gamma-P(2, 2.5, 2.17), 0.12962769871792748, :abs-tol(10⁻¹⁰), 'P cumulative gamma';
+  is-approx gamma-Q(2, 2.5, 2.17), 0.8703723012820725, :abs-tol(10⁻¹⁰), 'Q cumulative gamma';
+  is-approx gamma-Pinv(0.12962769871792748, 2.5, 2.17), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative gamma';
+  is-approx gamma-Qinv(0.8703723012820725, 2.5, 2.17), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gamma';
+}
+
+subtest 'flat distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx flat($r, 3, 4), 3.999741748906672, :abs-tol(10⁻¹⁰), 'flat';
+  is-approx flat-pdf(2, 3, 4), 0, :abs-tol(10⁻¹⁰), 'flat with pdf';
+  is-approx flat-P(2, 3, 4), 0, :abs-tol(10⁻¹⁰), 'P cumulative flat';
+  is-approx flat-Q(2, 3, 4), 1, :abs-tol(10⁻¹⁰), 'Q cumulative flat';
+  is-approx flat-Pinv(0, 3, 4), 3, :abs-tol(10⁻¹⁰), 'inverse P cumulative flat';
+  is-approx flat-Qinv(1, 3, 4), 3, :abs-tol(10⁻¹⁰), 'inverse Q cumulative flat';
+}
+
+subtest 'lognormal distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx lognormal($r, 2.7, 3), 12.239990687580857, :abs-tol(10⁻¹⁰), 'lognormal';
+  is-approx lognormal-pdf(2, 2.7, 3), 0.053160178764929525, :abs-tol(10⁻¹⁰), 'lognormal with pdf';
+  is-approx lognormal-P(2, 2.7, 3), 0.25176338701440004, :abs-tol(10⁻¹⁰), 'P cumulative lognormal';
+  is-approx lognormal-Q(2, 2.7, 3), 0.7482366129856, :abs-tol(10⁻¹⁰), 'Q cumulative lognormal';
+  is-approx lognormal-Pinv(0.25176338701440004, 2.7, 3), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative lognormal';
+  is-approx lognormal-Qinv(0.7482366129856, 2.7, 3), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative lognormal';
+}
+
+subtest 'chi-squared distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx chisq($r, 13), 16.53548783112717, :abs-tol(10⁻¹⁰), 'chisq';
+  is-approx chisq-pdf(2, 13), 0.0006389340989638759, :abs-tol(10⁻¹⁰), 'chisq with pdf';
+  is-approx chisq-P(2, 13), 0.00022625008465604695, :abs-tol(10⁻¹⁰), 'P cumulative chisq';
+  is-approx chisq-Q(2, 13), 0.999773749915344, :abs-tol(10⁻¹⁰), 'Q cumulative chisq';
+  is-approx chisq-Pinv(0.00022625008465604695, 13), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative chisq';
+  is-approx chisq-Qinv(0.999773749915344, 13), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative chisq';
+}
+
+subtest 'f-distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx fdist($r, 3, 4), 1.265383001140288, :abs-tol(10⁻¹⁰), 'fdist';
+  is-approx fdist-pdf(2, 3, 4), 0.13942740046346694, :abs-tol(10⁻¹⁰), 'fdist with pdf';
+  is-approx fdist-P(2, 3, 4), 0.743612802471824, :abs-tol(10⁻¹⁰), 'P cumulative fdist';
+  is-approx fdist-Q(2, 3, 4), 0.2563871975281759, :abs-tol(10⁻¹⁰), 'Q cumulative fdist';
+  is-approx fdist-Pinv(0.743612802471824, 3, 4), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative fdist';
+  is-approx fdist-Qinv(0.2563871975281759, 3, 4), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative fdist';
+}
+
+subtest 't-distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx tdist($r, 1.75), 0.2825086397013947, :abs-tol(10⁻¹⁰), 'tdist';
+  is-approx tdist-pdf(2, 1.75), 0.06778157292044809, :abs-tol(10⁻¹⁰), 'tdist with pdf';
+  is-approx tdist-P(2, 1.75), 0.8993101012459747, :abs-tol(10⁻¹⁰), 'P cumulative tdist';
+  is-approx tdist-Q(2, 1.75), 0.1006898987540253, :abs-tol(10⁻¹⁰), 'Q cumulative tdist';
+  is-approx tdist-Pinv(0.8993101012459747, 1.75), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative tdist';
+  is-approx tdist-Qinv(0.1006898987540253, 1.75), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative tdist';
+}
+
+subtest 'beta distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx beta($r, 2, 3), 0.45158505658193976, :abs-tol(10⁻¹⁰), 'beta';
+  is-approx beta-pdf(2, 2, 3), 0, :abs-tol(10⁻¹⁰), 'beta with pdf';
+  is-approx beta-P(2, 2, 3), 1, :abs-tol(10⁻¹⁰), 'P cumulative beta';
+  is-approx beta-Q(2, 2, 3), 0, :abs-tol(10⁻¹⁰), 'Q cumulative beta';
+  is-approx beta-Pinv(1, 2, 3), 1, :abs-tol(10⁻¹⁰), 'inverse P cumulative beta';
+  is-approx beta-Qinv(0, 2, 3), 1, :abs-tol(10⁻¹⁰), 'inverse Q cumulative beta';
+}
+
+subtest 'logistic distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx logistic($r, 3.1), 25.61009178896598, :abs-tol(10⁻¹⁰), 'logistic';
+  is-approx logistic-pdf(2, 3.1), 0.07280296434630028, :abs-tol(10⁻¹⁰), 'logistic with pdf';
+  is-approx logistic-P(2, 3.1), 0.6559192436053651, :abs-tol(10⁻¹⁰), 'P cumulative logistic';
+  is-approx logistic-Q(2, 3.1), 0.344080756394635, :abs-tol(10⁻¹⁰), 'Q cumulative logistic';
+  is-approx logistic-Pinv(0.6559192436053651, 3.1), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative logistic';
+  is-approx logistic-Qinv(0.344080756394635, 3.1), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative logistic';
+}
+
+subtest 'Pareto distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx pareto($r, 1.9, 2.75), 2.7503738581610317, :abs-tol(10⁻¹⁰), 'pareto';
+  is-approx pareto-pdf(3, 1.9, 2.75), 0.5368266659600216, :abs-tol(10⁻¹⁰), 'pareto with pdf';
+  is-approx pareto-P(3, 1.9, 2.75), 0.15237894848417666, :abs-tol(10⁻¹⁰), 'P cumulative pareto';
+  is-approx pareto-Q(3, 1.9, 2.75), 0.8476210515158233, :abs-tol(10⁻¹⁰), 'Q cumulative pareto';
+  is-approx pareto-Pinv(0.15237894848417666, 1.9, 2.75), 3, :abs-tol(10⁻¹⁰), 'inverse P cumulative pareto';
+  is-approx pareto-Qinv(0.8476210515158233, 1.9, 2.75), 3, :abs-tol(10⁻¹⁰), 'inverse Q cumulative pareto';
+}
+
+subtest 'spherical vector distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  my $*TOLERANCE = 10⁻¹⁰;
+  my ($x, $y) = d2dir($r);
+  ok $x ≅ -0.617745613497854 && $y ≅ -0.7863779988047479, '2D random vector';
+  ($x, $y) = d2dir-trig-method($r);
+  ok $x ≅ 0.11500033916619544 && $y ≅ 0.9933654523848008, '2D random vector trig method';
+  my $z;
+  ($x, $y, $z) = d3dir($r);
+  ok $x ≅ -0.024188741233946875 && $y ≅ 0.7364240456943486 && $z ≅ 0.6760876642275653, '3D random vector';
+  my @ret = dndir($r, 5);
+  ok (@ret[^5]
+    Z≅
+    (0.1717392856031707, 0.547345960645299, -0.814904936760339, 0.05741225862147077, -0.059596927348619114)),
+    'nD random vector';
+}
+
+subtest 'Weibull distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx weibull($r, 3.14, 2.75), 0.15568189304354582, :abs-tol(10⁻¹⁰), 'weibull';
+  is-approx weibull-pdf(2, 3.14, 2.75), 0.2978229948509798, :abs-tol(10⁻¹⁰), 'weibull with pdf';
+  is-approx weibull-P(2, 3.14, 2.75), 0.25117631509661126, :abs-tol(10⁻¹⁰), 'P cumulative weibull';
+  is-approx weibull-Q(2, 3.14, 2.75), 0.7488236849033888, :abs-tol(10⁻¹⁰), 'Q cumulative weibull';
+  is-approx weibull-Pinv(0.25117631509661126, 3.14, 2.75), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative weibull';
+  is-approx weibull-Qinv(0.7488236849033888, 3.14, 2.75), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative weibull';
+}
+
+subtest 'type-1 Gumbel distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx gumbel1($r, 3.12, 4.56), 3.134221698863258, :abs-tol(10⁻¹⁰), 'gumbel1';
+  is-approx gumbel1-pdf(2, 3.12, 4.56), 0.02749542323890301, :abs-tol(10⁻¹⁰), 'gumbel1 with pdf';
+  is-approx gumbel1-P(2, 3.12, 4.56), 0.9911480698975662, :abs-tol(10⁻¹⁰), 'P cumulative gumbel1';
+  is-approx gumbel1-Q(2, 3.12, 4.56), 0.008851930102433793, :abs-tol(10⁻¹⁰), 'Q cumulative gumbel1';
+  is-approx gumbel1-Pinv(0.9911480698975662, 3.12, 4.56), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative gumbel1';
+  is-approx gumbel1-Qinv(0.008851930102433793, 3.12, 4.56), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gumbel1';
+}
+
+subtest 'type-2 Gumbel distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  is-approx gumbel2($r, 3.12, 4.56), 22.970750721534436, :abs-tol(10⁻¹⁰), 'gumbel1';
+  is-approx gumbel2-pdf(2, 3.12, 4.56), 0.4842675579059279, :abs-tol(10⁻¹⁰), 'gumbel1 with pdf';
+  is-approx gumbel2-P(2, 3.12, 4.56), 0.5918470962288894, :abs-tol(10⁻¹⁰), 'P cumulative gumbel1';
+  is-approx gumbel2-Q(2, 3.12, 4.56), 0.4081529037711105, :abs-tol(10⁻¹⁰), 'Q cumulative gumbel1';
+  is-approx gumbel2-Pinv(0.5918470962288894, 3.12, 4.56), 2, :abs-tol(10⁻¹⁰), 'inverse P cumulative gumbel1';
+  is-approx gumbel2-Qinv(0.4081529037711105, 3.12, 4.56), 2, :abs-tol(10⁻¹⁰), 'inverse Q cumulative gumbel2';
+}
+
+subtest 'Dirichlet distribution' => {
+  my $*TOLERANCE = 10⁻¹⁰;
+  my Math::Libgsl::Random $r .= new;
+  my $K = 2;
+  my @alpha = 2.5, 5;
+
+  my @theta = dirichlet($r, $K, @alpha);
+  ok (@theta[^$K] Z≅ (0.37979184993320686, 0.6202081500667932)), 'dirichlet';
+
+  @theta = .2, .8;
+  ok dirichlet-pdf($K, @alpha, @theta) ≅ 2.148771883658201, 'dirichlet with pdf';
+  ok dirichlet-lnpdf($K, @alpha, @theta) ≅ 0.7648964620298799, 'ln dirichlet with pdf';
+}
+
+subtest 'general discrete distribution' => {
+  my $*TOLERANCE = 10⁻¹⁰;
+  my Math::Libgsl::Random $r .= new;
+  my Int $size = 3;
+  my @probability = .59, .4, .01;
+
+  my Math::Libgsl::RandomDistribution::Discrete $d .= new: :$size, :@probability;
+  isa-ok $d, Math::Libgsl::RandomDistribution::Discrete, 'crete a discrete distribution object';
+
+  ok $d.discrete($r) ~~ 0|1|2, 'get discrete random number';
+  ok $d.discrete-pdf(2) ≅ .01e0, 'probability of a value';
+  ok $d.size == $size, 'read size from object';
+  is-deeply $d.probability, [0.59, 0.4, 0.01], 'read probability from object';
+}
+
+subtest 'Poisson distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok poisson($r, 30) == 34, 'poisson';
+  is-approx poisson-pdf(2, 5), 0.08422433748856832, :abs-tol(10⁻¹⁰), 'poisson with pdf';
+  is-approx poisson-P(2, 5), 0.12465201948308077, :abs-tol(10⁻¹⁰), 'P cumulative poisson';
+  is-approx poisson-Q(2, 5), 0.8753479805169192, :abs-tol(10⁻¹⁰), 'Q cumulative poisson';
+}
+
+subtest 'Bernoulli distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok bernoulli($r, .3) == 0, 'bernoulli';
+  is-approx bernoulli-pdf(1, .3), 0.3, :abs-tol(10⁻¹⁰), 'bernoulli with pdf';
+}
+
+subtest 'binomial distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok binomial($r, .3, 5) == 5, 'binomial';
+  is-approx binomial-pdf(2, .3, 5), 0.3086999999999999, :abs-tol(10⁻¹⁰), 'binomial with pdf';
+  is-approx binomial-P(2, .3, 5), 0.83692, :abs-tol(10⁻¹⁰), 'P cumulative binomial';
+  is-approx binomial-Q(2, .3, 5), 0.16307999999999997, :abs-tol(10⁻¹⁰), 'Q cumulative binomial';
+}
+
+subtest 'multinomial distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  my $K = 3;
+  my $sum_n = 100;
+  my @p = 2, 7, 1;
+
+  my @n = multinomial($r, $K, $sum_n, @p);
+  is-deeply @n, [20, 72, 8], 'multinomial';
+  is-approx multinomial-pdf($K, @p, @n), 0.011455694618856253, :abs-tol(10⁻¹⁰), 'multinomial with pdf';
+  is-approx multinomial-lnpdf($K, @p, @n), -4.469268325992729, :abs-tol(10⁻¹⁰), 'ln multinomial with pdf';
+}
+
+subtest 'negative binomial distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok negative-binomial($r, .3, 20) == 45, 'negative binomial';
+  is-approx negative-binomial-pdf(20, .3, 20), 0.0019175722376507298, :abs-tol(10⁻¹⁰), 'negative binomial with pdf';
+  is-approx negative-binomial-P(20, .3, 20), 0.006254504372434949, :abs-tol(10⁻¹⁰), 'P cumulative negative binomial';
+  is-approx negative-binomial-Q(20, .3, 20), 0.9937454956275651, :abs-tol(10⁻¹⁰), 'Q cumulative negative binomial';
+}
+
+subtest 'Pascal distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok pascal($r, .8, 3) == 0, 'pascal';
+  is-approx pascal-pdf(2, .8, 3), 0.12287999999999971, :abs-tol(10⁻¹⁰), 'pascal with pdf';
+  is-approx pascal-P(2, .8, 3), 0.94208, :abs-tol(10⁻¹⁰), 'P cumulative pascal';
+  is-approx pascal-Q(2, .8, 3), 0.057920000000000006, :abs-tol(10⁻¹⁰), 'Q cumulative pascal';
+}
+
+subtest 'geometric distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok geometric($r, .5) == 1, 'geometric';
+  is-approx geometric-pdf(2, .5), .25, :abs-tol(10⁻¹⁰), 'geometric with pdf';
+  is-approx geometric-P(2, .5), .75, :abs-tol(10⁻¹⁰), 'P cumulative geometric';
+  is-approx geometric-Q(2, .5), .25, :abs-tol(10⁻¹⁰), 'Q cumulative geometric';
+}
+
+subtest 'hypergeometric distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok hypergeometric($r, 5, 7, 4) == 2, 'hypergeometric';
+  is-approx hypergeometric-pdf(2, 5, 7, 4), 0.4242424242424253, :abs-tol(10⁻¹⁰), 'hypergeometric with pdf';
+  is-approx hypergeometric-P(2, 5, 7, 4), 0.8484848484848483, :abs-tol(10⁻¹⁰), 'P cumulative hypergeometric';
+  is-approx hypergeometric-Q(2, 5, 7, 4), 0.1515151515151517, :abs-tol(10⁻¹⁰), 'Q cumulative hypergeometric';
+}
+
+subtest 'logarithmic distribution' => {
+  my Math::Libgsl::Random $r .= new;
+  ok logarithmic($r, .4) == 1, 'logarithmic';
+  is-approx logarithmic-pdf(2, .4), 0.15660921511769743, :abs-tol(10⁻¹⁰), 'logarithmic with pdf';
+}
+
+subtest 'Wishart distribution' => {
+  my Math::Libgsl::Random $r   .= new;
+  my Math::Libgsl::Matrix $L   .= new: 2, 2;
+  my Math::Libgsl::Matrix $X   .= new: 2, 2;
+  my Math::Libgsl::Matrix $L-X .= new: 2, 2;
+  my $df = 3;
+  my $*TOLERANCE = 10⁻¹⁰;
+
+  $X[0;0] = 2.213322; $X[1;1] = 3.285779; $X[0;1] = 1.453357; $X[1;0] = 1.453357;
+  $L[0;0] = 1;        $L[1;1] = 1;        $L[0;1] = .3;       $L[1;0] = .3;
+  $L-X.copy($X);
+  cholesky-decomp1($L);
+  cholesky-decomp1($L-X);
+
+  my $res = wishart-log-pdf($X, $L-X, $df, $L);
+  ok $res ≅ -4.931913612377813e0, 'log wishart with pdf';
+
+  $res = wishart-pdf($X, $L-X, $df, $L);
+  ok $res ≅ 0.007212687778224e0, 'wishart with pdf';
+}
+
+subtest 'shuffling and sampling' => {
+  my Math::Libgsl::Random $r .= new;
+  my @x = ^10;
+
+  my @y = shuffle($r, @x) for ^10;
+  is-deeply @y, [5, 7, 4, 0, 9, 3, 2, 8, 6, 1], 'shuffle';
+
+  my @elems = ^3;
+  @y = choose($r, 3, @x);
+  is-deeply @y, [2, 3, 5], 'choose';
+
+  @y = sample($r, 3, @x);
+  is-deeply @y, [2, 3, 4], 'sample';
+}
+
+done-testing;
