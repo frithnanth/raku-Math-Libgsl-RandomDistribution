@@ -1,7 +1,5 @@
 [![Build Status](https://travis-ci.org/frithnanth/raku-Math-Libgsl-RandomDistribution.svg?branch=master)](https://travis-ci.org/frithnanth/raku-Math-Libgsl-RandomDistribution)
 
-![2D random walk](examples/2Drandomwalk.svg "2D random walk")
-
 NAME
 ====
 
