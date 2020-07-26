@@ -1509,7 +1509,7 @@ I solved the issue installing the Debian Buster version of those three libraries
 To install it using zef (a module management tool):
 
 =begin code
-$ zef install Math::Libgsl::QuasiRandom
+$ zef install Math::Libgsl::RandomDistribution
 =end code
 
 =head1 AUTHOR
