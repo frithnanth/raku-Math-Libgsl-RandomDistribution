@@ -660,7 +660,7 @@ Installation
 
 To install it using zef (a module management tool):
 
-    $ zef install Math::Libgsl::QuasiRandom
+    $ zef install Math::Libgsl::RandomDistribution
 
 AUTHOR
 ======
