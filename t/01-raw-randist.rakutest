@@ -44,7 +44,7 @@ subtest 'bivariate gaussian distribution' => {
   my gsl_rng $r = mgsl_rng_setup(DEFAULT);
   my num64 ($x, $y) = (0e0, 0e0);
   gsl_ran_bivariate_gaussian($r, 3e0, 2e0, .3e0, $x, $y);
-  ok (($x, $y) Z≅ (-0.1952914837346669e0, 0.21644212342026375e0)), 'bivariate gaussian';
+  ok ([&&] (($x, $y) Z≅ (-0.1952914837346669e0, 0.21644212342026375e0))), 'bivariate gaussian';
   is-approx gsl_ran_bivariate_gaussian_pdf(0e0, 0e0, 3e0, 2e0, .3e0), 0.027806618922095617, :rel-tol(10⁻¹²), 'bivariate gaussian probability density';
   gsl_rng_free($r);
 }
@@ -324,9 +324,9 @@ subtest 'spherical vector distribution' => {
   my $n = 5;
   my $xarr = CArray[num64].new: 0e0 xx $n;
   gsl_ran_dir_nd($r, $n, $xarr);
-  ok ($xarr[^$n].list
+  ok ([&&] ($xarr[^$n].list
     Z≅
-    (0.1717392856031707e0, 0.547345960645299e0, -0.814904936760339e0, 0.05741225862147077e0, -0.059596927348619114e0)),
+    (0.1717392856031707e0, 0.547345960645299e0, -0.814904936760339e0, 0.05741225862147077e0, -0.059596927348619114e0))),
     'nD random vector';
 
   gsl_rng_free($r);
@@ -373,7 +373,7 @@ subtest 'Dirichlet distribution' => {
   my $theta = CArray[num64].new: 0e0, 0e0;
 
   gsl_ran_dirichlet($r, $K, $alpha, $theta);
-  ok ($theta[^$K].list Z≅ (0.37979184993320686e0, 0.6202081500667932e0)), 'dirichlet';
+  ok ([&&] ($theta[^$K].list Z≅ (0.37979184993320686e0, 0.6202081500667932e0))), 'dirichlet';
 
   $theta[0] = .2e0;
   $theta[1] = .8e0;
