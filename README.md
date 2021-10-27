@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/frithnanth/raku-Math-Libgsl-RandomDistribution.svg?branch=master)](https://travis-ci.org/frithnanth/raku-Math-Libgsl-RandomDistribution)
+[![Actions Status](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/workflows/test/badge.svg)](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/actions)
 
 ![2D Random Walk](examples/2Drandomwalk.svg "2D Random Walk")
 

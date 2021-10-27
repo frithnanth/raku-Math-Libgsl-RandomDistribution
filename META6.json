@@ -1,10 +1,11 @@
 {
-  "auth" : "cpan:FRITH",
-  "authors" : [
+  "auth": "cpan:FRITH",
+  "authors": [
     "Fernando Santagata"
   ],
-  "build-depends" : [ ],
-  "depends" : [
+  "build-depends": [
+  ],
+  "depends": [
     "NativeHelpers::Blob",
     "Math::Libgsl::Constants",
     "Math::Libgsl::Matrix",
@@ -12,23 +13,24 @@
     "Math::Libgsl::BLAS",
     "Math::Libgsl::LinearAlgebra"
   ],
-  "description" : "An interface to libgsl, the Gnu Scientific Library - Random Number Distributions",
-  "license" : "Artistic-2.0",
-  "name" : "Math::Libgsl::RandomDistribution",
-  "perl" : "6.c",
-  "provides" : {
-    "Math::Libgsl::RandomDistribution" : "lib/Math/Libgsl/RandomDistribution.rakumod",
-    "Math::Libgsl::Raw::RandomDistribution" : "lib/Math/Libgsl/Raw/RandomDistribution.rakumod"
+  "description": "An interface to libgsl, the Gnu Scientific Library - Random Number Distributions",
+  "license": "Artistic-2.0",
+  "name": "Math::Libgsl::RandomDistribution",
+  "perl": "6.c",
+  "provides": {
+    "Math::Libgsl::RandomDistribution": "lib/Math/Libgsl/RandomDistribution.rakumod",
+    "Math::Libgsl::Raw::RandomDistribution": "lib/Math/Libgsl/Raw/RandomDistribution.rakumod"
   },
-  "resources" : [ ],
-  "source-url" : "git://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution.git",
-  "tags" : [
+  "resources": [
+  ],
+  "source-url": "git://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution.git",
+  "tags": [
     "math",
     "nativecall"
   ],
-  "test-depends" : [
+  "test-depends": [
     "Math::Libgsl::BLAS",
     "Math::Libgsl::LinearAlgebra"
   ],
-  "version" : "0.0.2"
+  "version": "0.0.2"
 }
