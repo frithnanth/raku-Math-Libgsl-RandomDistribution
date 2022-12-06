@@ -1,6 +1,6 @@
 [![Actions Status](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/workflows/test/badge.svg)](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/actions)
 
-![2D Random Walk](examples/2Drandomwalk.svg "2D Random Walk")
+[2D Random Walk](examples/2Drandomwalk.svg "2D Random Walk")
 
 NAME
 ====
@@ -10,7 +10,7 @@ Math::Libgsl::RandomDistribution - An interface to libgsl, the Gnu Scientific Li
 SYNOPSIS
 ========
 
-```perl6
+```raku
 use Math::Libgsl::Random;
 use Math::Libgsl::RandomDistribution;
 
@@ -600,7 +600,7 @@ Class Math::Libgsl::RandomDistribution::Discrete
 
 This probability distribution needs a lookup table for the discrete random number generator, so it's implemented as a class, which hides the implementation details.
 
-```perl6
+```raku
 use Math::Libgsl::RandomDistribution;
 use Math::Libgsl::Random;
 
@@ -637,8 +637,8 @@ Prerequisites
 
 This module requires the libgsl library to be installed. Please follow the instructions below based on your platform:
 
-Debian Linux and Ubuntu 20.04
------------------------------
+Debian Linux and Ubuntu 20.04+
+------------------------------
 
     sudo apt install libgsl23 libgsl-dev libgslcblas0
 

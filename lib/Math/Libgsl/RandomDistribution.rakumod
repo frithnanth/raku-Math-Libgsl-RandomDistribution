@@ -1,6 +1,6 @@
 use v6.c;
 
-unit module Math::Libgsl::RandomDistribution:ver<0.0.3>:auth<cpan:FRITH>;
+unit module Math::Libgsl::RandomDistribution:ver<0.0.3>:auth<zef:FRITH>;
 
 use NativeCall;
 use NativeHelpers::Blob;
@@ -918,7 +918,7 @@ Math::Libgsl::RandomDistribution - An interface to libgsl, the Gnu Scientific Li
 
 =head1 SYNOPSIS
 
-=begin code :lang<perl6>
+=begin code :lang<raku>
 
 use Math::Libgsl::Random;
 use Math::Libgsl::RandomDistribution;
@@ -1449,7 +1449,7 @@ This function is like choose() but samples $k items from the original array of n
 
 This probability distribution needs a lookup table for the discrete random number generator, so it's implemented as a class, which hides the implementation details.
 
-=begin code :lang<perl6>
+=begin code :lang<raku>
 
 use Math::Libgsl::RandomDistribution;
 use Math::Libgsl::Random;
@@ -1487,7 +1487,7 @@ The excellent C Library manual is available here L<https://www.gnu.org/software/
 
 This module requires the libgsl library to be installed. Please follow the instructions below based on your platform:
 
-=head2 Debian Linux and Ubuntu 20.04
+=head2 Debian Linux and Ubuntu 20.04+
 
 =begin code
 sudo apt install libgsl23 libgsl-dev libgslcblas0

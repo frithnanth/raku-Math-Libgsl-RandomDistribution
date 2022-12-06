@@ -1,6 +1,7 @@
 Revision history for Math-Libgsl-RandomDistribution
 
 {{$NEXT}}
+    - Use zef ecosystem
 
 0.0.3  2021-10-27T21:12:46+02:00
     - Change a class into a module
