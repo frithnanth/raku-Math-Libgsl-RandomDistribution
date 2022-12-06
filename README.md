@@ -1,7 +1,5 @@
 [![Actions Status](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/workflows/test/badge.svg)](https://github.com/frithnanth/raku-Math-Libgsl-RandomDistribution/actions)
 
-![2D Random Walk](examples/2Drandomwalk.svg "2D Random Walk")
-
 NAME
 ====
 

@@ -1,6 +1,6 @@
 use v6.c;
 
-unit module Math::Libgsl::RandomDistribution:ver<0.0.3>:auth<zef:FRITH>;
+unit module Math::Libgsl::RandomDistribution:ver<0.0.4>:auth<zef:FRITH>;
 
 use NativeCall;
 use NativeHelpers::Blob;
